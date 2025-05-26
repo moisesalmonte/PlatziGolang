@@ -6,22 +6,16 @@ import (
 )
 
 type TextField struct{
-	Width int
-	Height int
-	Text string
-	Color Color
+	text string
+	textColor Color
 }
 
 func main(){
-	fmt.Println(Blue)
+	txtField := TextField{"Estoy aprendiendo Go en Platzi!", Color(Green)}
+	/* fmt.Println(txtField.textColor.HexToRGB())
+	fmt.Println(txtField.textColor.HexToString()) */
 
-	txtField := TextField{100, 100, "Hello world!", Color(Blue)}
-	fmt.Println(txtField.Color.HexToRGB())
-	fmt.Println(txtField.Color.HexToString())
-
-	red := "\033[31m"
-    reset := "\033[0m"
-    fmt.Println(red + "This text is red" + reset)
+	txtField.Paint()
 }
 
 // Nuevo tipo para contener el indice
@@ -46,6 +40,15 @@ var color_hex = map[Color] string{
 	White: 	"FFFFFF",
 }
 
+var color_ansi = map[Color] string{
+	Blue: 	"\x1b[34m",
+	Red: 	"\x1b[31m",
+	Green:	"\x1b[32m",
+	Yellow:	"\x1b[33m",
+	Black:	"\x1b[30m",
+	White:	"\x1b[37m",
+}
+
 func (c Color) HexToRGB() [3][]byte {
 	var cadena = [3]string{color_hex[c][0:2], color_hex[c][2:4], color_hex[c][4:6]}
 	var rgb [3][]byte
@@ -62,4 +65,23 @@ func (c Color) HexToRGB() [3][]byte {
 
 func (c Color) HexToString() string {
 	return color_hex[c]
+}
+
+func (c Color) ColorAnsi() string{
+	return color_ansi[c]
+}
+
+func (t TextField) Paint(){
+	color_reset_ansi := "\x1b[0m"
+	txt_len := len(t.text)
+	printLines(txt_len)
+	fmt.Println("|" + t.textColor.ColorAnsi() + t.text + color_reset_ansi + "|")
+	printLines(txt_len)
+}
+
+func printLines(length int){
+	for i := 0; i < length + 2; i++ {
+		fmt.Printf("%s", "-")
+	}
+	fmt.Printf("\n")
 }
