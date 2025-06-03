@@ -24,11 +24,11 @@ func main(){
 			fmt.Println("#3", saludo3)
 		}
 	}
-
+	
 }
 
-func saludo(name string, canal chan string, s time.Duration){
+func saludo(name string, canal chan string, tiempo time.Duration){
 	saludo := fmt.Sprintf("Welcome %s", name)
-	time.Sleep(s * time.Millisecond)
+	time.Sleep(tiempo * time.Millisecond)
 	canal <- saludo
 }
