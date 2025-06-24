@@ -11,122 +11,144 @@ import (
 )
 
 const (
-	DOWNLOAD_PATH = "download/"
-	NUM_POKEMON = 151 // Primera generacion
-	NUM_WORKERS = 4 // 1-9
-	ESC = 27
+	DOWNLOAD_PATH 	= "download/"
+	NUM_POKEMON 	= 151 // Primera generacion
+	NUM_WORKERS 	= 5 // 1-9
+	ESC 			= 27
+	BLUE 			= "\x1b[34m"
+	RED 			= "\x1b[31m"
+	GREEN 			= "\x1b[32m"
+	YELLOW 			= "\x1b[33m"
+	RESET_COLOR 	= "\x1b[0m"
 )
+
 var isFirstPrint = true
 var lines [NUM_WORKERS + 2]string
 
 func main(){
-	controls_workers := make([]Controls, 0, NUM_WORKERS)
-	for i := 1; i <= NUM_WORKERS; i++ {
-		controls_workers = append(controls_workers, Controls{make(chan int), make(chan int), make(chan int)})
-	} 	
-	
-	lista := get_pokemon_list_gen_1()
-	lista_div := dividir_lista(lista, 4)
-
-	for index, wrk := range controls_workers{
-		go worker(wrk, lista_div[index], index+1)
-	}
-
 	//Canal para enviar la tecla presionada
 	key := make(chan rune)
 	tty, _ := tty.Open() //Funcion para obtener las teclas que preciona el usuario en la terminal
-    defer tty.Close()
+	workerControls := make([]Controls, 0, NUM_WORKERS)
+	for i := 1; i <= NUM_WORKERS; i++ {
+		workerControls = append(workerControls, Controls{make(chan int), make(chan int), make(chan int), false})
+	} 	
+	
+	pokeList := getPokemonList()
+	pokeList_div := divPokeList(pokeList, NUM_WORKERS)
+	for i := 0; i < len(workerControls); i++{
+		go worker(&workerControls[i], pokeList_div[i], i+1, key)
+	}
 
 	go func(){// Rutina para enviar la tecla presionada al canal key
 		for {
 			err := keyPress(key, tty)
 			if err != nil {
 				fmt.Println(err)
-				return
+				break
+			}
+			if isAllWorkerDone(workerControls) {
+				break
 			}
 		}
 	}()
 	
 	//Ocultar cursor
 	fmt.Print("\033[?25l")
-	lines[len(lines) - 2], lines[len(lines) - 1] = menu_1()
+	lines[len(lines) - 2], lines[len(lines) - 1] = menuOne()
 
 	go func(){ //Rutina para dibujar la pantalla cada n milliseconds
 		for{
-			imprimirTextos(lines)
-			time.Sleep(200 * time.Millisecond)
+			printLines(lines)
+			time.Sleep(50 * time.Millisecond)
+			if isAllWorkerDone(workerControls){
+				break
+			}
 		}
 	}()
 
-	isAccionPress := false
-	accion := ""
+	isActionPress := false
+	action := ""
 	var kPress rune
 	for {
 		kPress = <- key
-		if(isAccionPress){
-			rutinaElegida(kPress, accion, lines, controls_workers)
+		if(isActionPress){
+			isActionPress = routineChoose(kPress, action, &lines, workerControls)
+		}else if kPress == 1 {
+			if isAllWorkerDone(workerControls){
+				break
+			}
 		}else{
 			if(kPress == ESC) { //Salir del programa
-				return
+				workerControls[0].isDone = true
+				break
 			}else{
-				isAccionPress, accion = accionElegida(kPress, lines)
+				isActionPress, action = actionChoose(kPress, &lines)
 			}
 		}
 	}
 
 	//Liberar el cursor al final del programa
 	fmt.Print("\033[?25h")
+	tty.Close()
 }
 
 type Controls struct {
 	cancel chan int
 	pause chan int
 	resume chan int
+	isDone bool
 }
 
-func worker(control Controls, list_url []string, id int){
-	for idx, url := range list_url	{
+func worker(control *Controls, listURL []string, id int, k chan rune){
+	for idx, url := range listURL	{
 		select{
 		case <- control.cancel:
-			lines[id - 1] = fmt.Sprintf("Rutina #%d, cancelada por el usuario", id)
+			lines[id - 1] = fmt.Sprintf("%sRoutine %d, canceled by user%s", RED, id, RESET_COLOR)
+			control.isDone = true
+			k <- rune(1)
 			return
 		case <- control.pause:
-			lines[id - 1] = fmt.Sprintf("Rutina #%d, pausada por el usuario", id)
+			lines[id - 1] = fmt.Sprintf("%sRoutine %d, paused by user%s", YELLOW, id, RESET_COLOR)
 			<- control.resume
 		default:
-			res, err := descargar_archivo(url)
+			lines[id - 1] = fmt.Sprintf("%sRoutine %d, downloading%s %d/%d", BLUE, id, RESET_COLOR, idx+1, len(listURL))
+			res, err := downloadFile(url)
 			if err != nil {
 				fmt.Println(err)
+				control.isDone = true
+				k <- rune(1)
 				return
 			}
-			name_file := strings.Split(url, "/")[8]
-			err = guardar_archivo(res, name_file)
+			nameFile := strings.Split(url, "/")[8]
+			err = saveFile(res, nameFile)
 			if(err != nil){
 				fmt.Println(err)
+				control.isDone = true
+				k <- rune(1)
 				return
 			}
-			lines[id - 1] = fmt.Sprintf("Rutina #%d, descargando %d de %d", id, idx+1, len(list_url))
 			time.Sleep(1000 * time.Millisecond)
 		}
 	}
-	lines[id - 1] = fmt.Sprintf("Rutina #%d, finalizada.", id)
+	lines[id - 1] = fmt.Sprintf("%sRoutine %d, is completed.%s", GREEN, id, RESET_COLOR)
+	time.Sleep(100 * time.Millisecond)
+	control.isDone = true
+	k <- rune(1)
 }
 
-func get_pokemon_list_gen_1() []string {
-	var list_pokemon []string
+func getPokemonList() []string {
+	var pokemonList []string
 	url := "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/"
 	
 	for i := 1; i <= NUM_POKEMON; i++ {
-		url_pokemon := fmt.Sprintf("%s%d.png", url, i)
-		list_pokemon = append(list_pokemon, url_pokemon)
+		pokemonURL := fmt.Sprintf("%s%d.png", url, i)
+		pokemonList = append(pokemonList, pokemonURL)
 	}
-	return list_pokemon
+	return pokemonList
 }
 
-
-func descargar_archivo(url string) (*http.Response, error) {
-	/* var response *http.Response
-	err := errors.New("") */
+func downloadFile(url string) (*http.Response, error) {
 	response, err := http.Get(url)
 	if err != nil {
 		return response, err
@@ -134,48 +156,47 @@ func descargar_archivo(url string) (*http.Response, error) {
 	return response, nil
 }
 
-func guardar_archivo(res *http.Response, filename string) error {
-	//creando carpeta
+func saveFile(res *http.Response, filename string) error {
 	err := os.MkdirAll(DOWNLOAD_PATH, 0777)
 	if err != nil {
 		return err
 	}
 
-	d_file, err2 := os.Create(DOWNLOAD_PATH + filename)
+	fileDown, err2 := os.Create(DOWNLOAD_PATH + filename)
 	if err != nil {
 		return err2
 	}
 
-	_, err3 := io.Copy(d_file, res.Body)
+	_, err3 := io.Copy(fileDown, res.Body)
 	res.Body.Close()
-	d_file.Close()
+	fileDown.Close()
 
 	return err3
 } 
 
-func dividir_lista(arreglo []string, dvd int) [][]string {
-	length := len(arreglo)
-	len_grp := length / dvd
+func divPokeList(pokeArray []string, dvd int) [][]string {
+	length := len(pokeArray)
+	divPokeArray := length / dvd
 
-	salida_arr := [][]string{}
-	for i := len_grp; i <= len_grp * (dvd - 1); i += len_grp {
-		salida_arr = append(salida_arr, arreglo[i-len_grp:i])
+	divArrayReturn := [][]string{}
+	for i := divPokeArray; i <= divPokeArray * (dvd - 1); i += divPokeArray {
+		divArrayReturn = append(divArrayReturn, pokeArray[i-divPokeArray:i])
 	}
-	salida_arr = append(salida_arr, arreglo[(len_grp * (dvd - 1)):])
-	return salida_arr
+	divArrayReturn = append(divArrayReturn, pokeArray[(divPokeArray * (dvd - 1)):])
+	return divArrayReturn
 }
 
-func keyPress(canal chan rune, t *tty.TTY) error {
+func keyPress(channel chan rune, t *tty.TTY) error {
 	key, err := t.ReadRune()
 	if err != nil {
 		return err
 	}
 
-	canal <- key
+	channel <- key
 	return nil
 }
 
-func imprimirTextos(txt [len(lines)]string){
+func printLines(txt [len(lines)]string){
 	if(!isFirstPrint){
 		fmt.Printf("\033[%dA", len(txt)) //Subir el cursor n lineas
 	}
@@ -185,45 +206,42 @@ func imprimirTextos(txt [len(lines)]string){
 	isFirstPrint = false
 }
 
-func menu_1() (string, string) {
-	str1 := "Presiona una tecla para seleccionar una accion:"
-	str2 := "[P] pausar, [R] reanudar, [C] cancelar, [Esc] Salir"
+func menuOne() (string, string) {
+	str1 := "🟩 Press a key to select an action:"
+	str2 := "🟩 [P] Pause, [R] Resume, [C] Cancel, [Esc] Exit"
 	return str1, str2
 }
 
-func menu_2(accion string, length int) (string, string) {
-	str1 := fmt.Sprintf("Haz eligido <<%s>>:", accion)
-	str2 := fmt.Sprintf("Elige de 1 al %d, ha <%s>> o [Esc] para volver.", length, accion)
+func menuTwo(action string, length int) (string, string) {
+	str1 := fmt.Sprintf("🟦 You chose, %s:", action)
+	str2 := fmt.Sprintf("🟦 Choose from 1 to %d, to %s or [Esc] to go back.", length - 2, action)
 	return str1, str2
 }
 
-func accionElegida(k rune, txt [len(lines)]string) (bool, string){
+func actionChoose(k rune, txt *[len(lines)]string) (bool, string){
 	length := len(txt)
-	var accion string
+	var action string
 	if k == 'p' || k == 'P' {
-		accion = "Pausar"
-		txt[length -2],	txt[length -1] = menu_2(accion, length)
-		accion = "Pausar"
+		action = "Pausar"
+		txt[length -2],	txt[length -1] = menuTwo("⏸️"+action, length)
 	}else if k == 'r' || k == 'R' {
-		accion = "Reanudar"
-		txt[length -2],	txt[length -1] = menu_2(accion, length)
-		accion = "Reanudar"
+		action = "Reanudar"
+		txt[length -2],	txt[length -1] = menuTwo("▶️"+action, length)
 	}else if k == 'c' || k == 'C' {
-		accion = "Cancelar"
-		txt[length -2],	txt[length -1] = menu_2(accion, length)
-		
+		action = "Cancelar"
+		txt[length -2],	txt[length -1] = menuTwo("⏹️"+action, length)
 	}else{
-		return false, accion
+		return false, action
 	}
-	return true, accion
+	return true, action
 }
 
-func rutinaElegida(rutina rune, accion string, txt [len(lines)]string, cw []Controls){
+func routineChoose(rutina rune, action string, txt *[len(lines)]string, cw []Controls) bool{
 	length := len(txt)
 	const DIV_K = 48
 	num := rutina % DIV_K
-	if num >= 1 && int(num) <= len(txt) {
-		switch(accion){
+	if num >= 1 && int(num) <= length - 2 {
+		switch(action){
 		case "Pausar":
 			cw[num - 1].pause <- 1
 		case "Reanudar":
@@ -231,6 +249,18 @@ func rutinaElegida(rutina rune, accion string, txt [len(lines)]string, cw []Cont
 		case "Cancelar":
 			cw[num - 1].cancel <- 1
 		}
-		txt[length - 2], txt[length - 1] = menu_1()
+		txt[length - 2], txt[length - 1] = menuOne()
+		return false
 	}
+	return true
+}
+
+func isAllWorkerDone(ctrls []Controls) bool{
+	count_wrk_end := 0
+	for _, ctrl := range ctrls{
+		if ctrl.isDone{
+			count_wrk_end++
+		}
+	}
+	return count_wrk_end == len(ctrls)
 }
