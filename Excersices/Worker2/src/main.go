@@ -111,7 +111,8 @@ func main(){
 			}
 		}
 	}
-
+	
+	cleanMenu()
 	/* 
 		Imprime en consola el codigo ANSI
 		para mostrar el cursor
@@ -303,4 +304,8 @@ func isAllWorkerDone(ctrls []Controls) bool{
 		}
 	}
 	return count_wrk_end == len(ctrls)
+}
+
+func cleanMenu(){
+	fmt.Print("\033[1A\033[0K\033[1A\033[0K")
 }
