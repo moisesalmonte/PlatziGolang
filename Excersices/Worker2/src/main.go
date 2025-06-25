@@ -26,6 +26,7 @@ const (
 var isFirstPrint = true
 // Arreglo para imprimir en pantalla de manera organizada
 var lines [NUM_WORKERS + 2]string 
+var errorPrint = false
 
 func main(){
 	key 			:= make(chan rune) //Canal para enviar la tecla presionada por el usuario
@@ -54,6 +55,7 @@ func main(){
 			err := keyPress(key, tty)
 			if err != nil {
 				fmt.Println(err)
+				errorPrint = true
 				break
 			}
 
@@ -150,6 +152,7 @@ func worker(control *Controls, listURL []string, id int, k chan rune){
 			res, err := downloadFile(url)
 			if err != nil {
 				fmt.Println(err)
+				errorPrint = true
 				control.isDone = true
 				k <- rune(1)
 				return
@@ -158,6 +161,7 @@ func worker(control *Controls, listURL []string, id int, k chan rune){
 			err = saveFile(res, nameFile)
 			if(err != nil){
 				fmt.Println(err)
+				errorPrint = true
 				control.isDone = true
 				k <- rune(1)
 				return
@@ -187,6 +191,7 @@ func getPokemonList() []string {
 func downloadFile(url string) (*http.Response, error) {
 	response, err := http.Get(url)
 	if err != nil {
+		errorPrint = true
 		return response, err
 	}
 	return response, nil
@@ -195,17 +200,22 @@ func downloadFile(url string) (*http.Response, error) {
 func saveFile(res *http.Response, filename string) error {
 	err := os.MkdirAll(DOWNLOAD_PATH, 0777)
 	if err != nil {
+		errorPrint = true
 		return err
 	}
 
 	fileDown, err2 := os.Create(DOWNLOAD_PATH + filename)
 	if err != nil {
+		errorPrint = true
 		return err2
 	}
 
 	_, err3 := io.Copy(fileDown, res.Body)
 	res.Body.Close()
 	fileDown.Close()
+	if err3 != nil {
+		errorPrint = true
+	}
 
 	return err3
 } 
@@ -225,6 +235,7 @@ func divPokeList(pokeArray []string, dvd int) [][]string {
 func keyPress(channel chan rune, t *tty.TTY) error {
 	key, err := t.ReadRune()
 	if err != nil {
+		errorPrint = true
 		return err
 	}
 
@@ -307,5 +318,7 @@ func isAllWorkerDone(ctrls []Controls) bool{
 }
 
 func cleanMenu(){
-	fmt.Print("\033[1A\033[0K\033[1A\033[0K")
+	if !errorPrint{
+		fmt.Print("\033[1A\033[0K\033[1A\033[0K")
+	}
 }
