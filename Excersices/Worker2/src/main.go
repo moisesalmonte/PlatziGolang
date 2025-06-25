@@ -37,7 +37,7 @@ func main(){
 		en el Slice, con channels anonimos. 
 	*/
 	for i := 1; i <= NUM_WORKERS; i++ {
-		workerControls = append(workerControls, Controls{make(chan int), make(chan int), make(chan int), false})
+		workerControls = append(workerControls, Controls{make(chan int), make(chan int), make(chan int), false, false})
 	} 	
 	
 	pokeList 		:= getPokemonList() 
@@ -127,6 +127,7 @@ type Controls struct {
 	pause chan int
 	resume chan int
 	isDone bool
+	isPause bool
 }
 
 //Funcion Worker, para descargar y guardar el archivo
@@ -140,7 +141,9 @@ func worker(control *Controls, listURL []string, id int, k chan rune){
 			return
 		case <- control.pause:
 			lines[id - 1] = fmt.Sprintf("%sRoutine %d, paused by user%s", YELLOW, id, RESET_COLOR)
+			control.isPause = true
 			<- control.resume
+			control.isPause = false
 		default:
 			lines[id - 1] = fmt.Sprintf("%sRoutine %d, downloading%s %d/%d", BLUE, id, RESET_COLOR, idx+1, len(listURL))
 			res, err := downloadFile(url)
@@ -281,6 +284,9 @@ func routineChoose(numRoutineChoose rune, action string, txt *[len(lines)]string
 		case "Resume":
 			cw[num - 1].resume <- 1
 		case "Cancel":
+			if(cw[num - 1].isPause){
+				cw[num - 1].resume <- 1
+			}
 			cw[num - 1].cancel <- 1
 		}
 		txt[length - 2], txt[length - 1] = menuOne()
