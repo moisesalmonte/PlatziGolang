@@ -99,14 +99,19 @@ func main(){
 	for {
 		kPress = <- key
 		if(isActionPress){
-			isActionPress = routineChoose(kPress, action, &lines, workerControls)
+			if(kPress == ESC){ //Retornar al menu 1
+				isActionPress = false
+				length := len(lines)
+				lines[length -2], lines[length -1] = menuOne()
+			}else{
+				isActionPress = routineChoose(kPress, action, &lines, workerControls)
+			}
 		}else if kPress == 1 {
 			if isAllWorkerDone(workerControls){
 				break
 			}
 		}else{
 			if(kPress == ESC) { //Salir del programa
-				workerControls[0].isDone = true
 				break
 			}else{
 				isActionPress, action = actionChoose(kPress, &lines)
@@ -272,13 +277,13 @@ func actionChoose(k rune, txt *[len(lines)]string) (bool, string){
 	var action string
 	if k == 'p' || k == 'P' {
 		action = "Pause"
-		txt[length -2],	txt[length -1] = menuTwo("⏸️"+action, length)
+		txt[length -2],	txt[length -1] = menuTwo("⏸️ "+action, length)
 	}else if k == 'r' || k == 'R' {
 		action = "Resume"
-		txt[length -2],	txt[length -1] = menuTwo("▶️"+action, length)
+		txt[length -2],	txt[length -1] = menuTwo("▶️ "+action, length)
 	}else if k == 'c' || k == 'C' {
 		action = "Cancel"
-		txt[length -2],	txt[length -1] = menuTwo("⏹️"+action, length)
+		txt[length -2],	txt[length -1] = menuTwo("⏹️ "+action, length)
 	}else{
 		return false, action
 	}
@@ -289,17 +294,24 @@ func routineChoose(numRoutineChoose rune, action string, txt *[len(lines)]string
 	length := len(txt)
 	const DIV_K = 48
 	num := numRoutineChoose % DIV_K
+	indexControl := num - 1
 	if num >= 1 && int(num) <= length - 2 {
 		switch(action){
 		case "Pause":
-			cw[num - 1].pause <- 1
-		case "Resume":
-			cw[num - 1].resume <- 1
-		case "Cancel":
-			if(cw[num - 1].isPause){
-				cw[num - 1].resume <- 1
+			if(!cw[indexControl].isPause && !cw[indexControl].isDone){
+				cw[indexControl].pause <- 1
 			}
-			cw[num - 1].cancel <- 1
+		case "Resume":
+			if(cw[indexControl].isPause){
+				cw[indexControl].resume <- 1
+			}
+		case "Cancel":
+			if(!cw[indexControl].isDone){
+				if(cw[indexControl].isPause){
+					cw[indexControl].resume <- 1
+				}
+				cw[indexControl].cancel <- 1
+			}
 		}
 		txt[length - 2], txt[length - 1] = menuOne()
 		return false
